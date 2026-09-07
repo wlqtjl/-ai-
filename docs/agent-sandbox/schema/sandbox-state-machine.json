@@ -1,54 +1,173 @@
 {
-  "$comment": "沙盒状态机的机器可读定义。tools/validate_state_machine.py 会校验：所有状态可达、终态无出边、非终态可达终态、以及文档中声明的硬约束。",
+  "$comment": "沙盒状态机的机器可读定义。tools/validate_state_machine.py 做的是**契约自洽性检查**（图结构不变式 + 少量以字符串约定表达的标签检查），不构成对实现行为的验证。第二轮修订：首版为『变更导出』而非『合并回生产』，merging/merged 改为 exporting/exported。",
   "version": "1.0.0-draft",
   "initial_state": "creating",
-  "terminal_states": ["discarded", "failed"],
+  "terminal_states": [
+    "discarded",
+    "failed"
+  ],
   "states": {
-    "creating":       { "connectable": false,      "holds_quota": true },
-    "ready":          { "connectable": true,       "holds_quota": true },
-    "checkpointing":  { "connectable": false,      "holds_quota": true },
-    "rolling_back":   { "connectable": false,      "holds_quota": true },
-    "diffing":        { "connectable": false,      "holds_quota": true },
-    "pending_review": { "connectable": "readonly", "holds_quota": true },
-    "merging":        { "connectable": false,      "holds_quota": true },
-    "merged":         { "connectable": false,      "holds_quota": true },
-    "discarding":     { "connectable": false,      "holds_quota": true },
-    "discarded":      { "connectable": false,      "holds_quota": false },
-    "failed":         { "connectable": false,      "holds_quota": true }
+    "creating": {
+      "connectable": false,
+      "holds_quota": true
+    },
+    "ready": {
+      "connectable": true,
+      "holds_quota": true
+    },
+    "checkpointing": {
+      "connectable": false,
+      "holds_quota": true
+    },
+    "rolling_back": {
+      "connectable": false,
+      "holds_quota": true
+    },
+    "diffing": {
+      "connectable": false,
+      "holds_quota": true
+    },
+    "pending_review": {
+      "connectable": "readonly",
+      "holds_quota": true
+    },
+    "exporting": {
+      "connectable": false,
+      "holds_quota": true
+    },
+    "exported": {
+      "connectable": false,
+      "holds_quota": true
+    },
+    "discarding": {
+      "connectable": false,
+      "holds_quota": true
+    },
+    "discarded": {
+      "connectable": false,
+      "holds_quota": false
+    },
+    "failed": {
+      "connectable": false,
+      "holds_quota": true
+    }
   },
   "transitions": [
-    { "from": "creating",       "to": "ready",          "trigger": "clone_mount_verified" },
-    { "from": "creating",       "to": "failed",         "trigger": "clone_failed" },
-    { "from": "creating",       "to": "discarding",     "trigger": "cancelled_or_ttl_expired" },
-
-    { "from": "ready",          "to": "checkpointing",  "trigger": "create_checkpoint" },
-    { "from": "ready",          "to": "rolling_back",   "trigger": "rollback" },
-    { "from": "ready",          "to": "diffing",        "trigger": "request_changeset" },
-    { "from": "ready",          "to": "pending_review", "trigger": "submit_for_review" },
-    { "from": "ready",          "to": "discarding",     "trigger": "discard_or_ttl_expired" },
-    { "from": "ready",          "to": "failed",         "trigger": "sandbox_unhealthy" },
-
-    { "from": "checkpointing",  "to": "ready",          "trigger": "checkpoint_done" },
-    { "from": "checkpointing",  "to": "failed",         "trigger": "checkpoint_failed" },
-
-    { "from": "rolling_back",   "to": "ready",          "trigger": "rollback_done" },
-    { "from": "rolling_back",   "to": "failed",         "trigger": "rollback_failed" },
-
-    { "from": "diffing",        "to": "ready",          "trigger": "changeset_ready" },
-    { "from": "diffing",        "to": "failed",         "trigger": "changeset_failed" },
-
-    { "from": "pending_review", "to": "ready",          "trigger": "review_rejected" },
-    { "from": "pending_review", "to": "merging",        "trigger": "review_approved_by_human" },
-    { "from": "pending_review", "to": "discarding",     "trigger": "grace_period_expired" },
-
-    { "from": "merging",        "to": "merged",         "trigger": "merge_succeeded" },
-    { "from": "merging",        "to": "failed",         "trigger": "merge_failed_production_rolled_back" },
-
-    { "from": "merged",         "to": "discarding",     "trigger": "auto_recycle" },
-
-    { "from": "failed",         "to": "discarding",     "trigger": "ttl_expired_or_manual" },
-
-    { "from": "discarding",     "to": "discarded",      "trigger": "recycle_done" }
+    {
+      "from": "creating",
+      "to": "ready",
+      "trigger": "clone_mount_verified"
+    },
+    {
+      "from": "creating",
+      "to": "failed",
+      "trigger": "clone_failed"
+    },
+    {
+      "from": "creating",
+      "to": "discarding",
+      "trigger": "cancelled_or_ttl_expired"
+    },
+    {
+      "from": "ready",
+      "to": "checkpointing",
+      "trigger": "create_checkpoint"
+    },
+    {
+      "from": "ready",
+      "to": "rolling_back",
+      "trigger": "rollback"
+    },
+    {
+      "from": "ready",
+      "to": "diffing",
+      "trigger": "request_changeset"
+    },
+    {
+      "from": "ready",
+      "to": "pending_review",
+      "trigger": "submit_for_review"
+    },
+    {
+      "from": "ready",
+      "to": "discarding",
+      "trigger": "discard_or_ttl_expired"
+    },
+    {
+      "from": "ready",
+      "to": "failed",
+      "trigger": "sandbox_unhealthy"
+    },
+    {
+      "from": "checkpointing",
+      "to": "ready",
+      "trigger": "checkpoint_done"
+    },
+    {
+      "from": "checkpointing",
+      "to": "failed",
+      "trigger": "checkpoint_failed"
+    },
+    {
+      "from": "rolling_back",
+      "to": "ready",
+      "trigger": "rollback_done"
+    },
+    {
+      "from": "rolling_back",
+      "to": "failed",
+      "trigger": "rollback_failed"
+    },
+    {
+      "from": "diffing",
+      "to": "ready",
+      "trigger": "changeset_ready"
+    },
+    {
+      "from": "diffing",
+      "to": "failed",
+      "trigger": "changeset_failed"
+    },
+    {
+      "from": "pending_review",
+      "to": "ready",
+      "trigger": "review_rejected"
+    },
+    {
+      "from": "pending_review",
+      "to": "exporting",
+      "trigger": "review_approved_by_human"
+    },
+    {
+      "from": "pending_review",
+      "to": "discarding",
+      "trigger": "grace_period_expired"
+    },
+    {
+      "from": "exporting",
+      "to": "exported",
+      "trigger": "export_artifact_published"
+    },
+    {
+      "from": "exporting",
+      "to": "failed",
+      "trigger": "export_failed_no_production_write"
+    },
+    {
+      "from": "exported",
+      "to": "discarding",
+      "trigger": "auto_recycle"
+    },
+    {
+      "from": "failed",
+      "to": "discarding",
+      "trigger": "ttl_expired_or_manual"
+    },
+    {
+      "from": "discarding",
+      "to": "discarded",
+      "trigger": "recycle_done"
+    }
   ],
   "invariants": [
     {

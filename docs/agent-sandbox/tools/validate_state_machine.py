@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
-"""校验沙盒状态机定义（schema/sandbox-state-machine.json）满足 04 文档声明的全部不变式。
+"""状态机定义的**契约自洽性检查**（schema/sandbox-state-machine.json）。
+
+⚠️ 本脚本**不构成对系统行为的任何验证**。它检查的是「这份 JSON 是否符合 04 文档写下的规则」。
+
+具体强度分两类，使用者必须区分：
+
+- **图结构不变式（INV-0/2/3/4/5）**：真正可判定的性质，如可达性、终态无出边、
+  「不存在无法回收的沙盒」。这类检查有实质价值。
+- **标签约定检查（INV-1/6）**：只能检查字符串标签是否符合约定，
+  例如 INV-6 检查的是转换的 trigger 里**有没有出现**某几个字——
+  **这是在检查标签，不是在检查行为**。实现是否真的做了对应动作，本脚本无从得知。
 
 这份脚本的价值在于：状态机是后续 Airflow DAG、API 状态校验、回收巡检的共同来源，
-一旦有人新增状态或转换，这里能立刻发现「出现了无法回收的沙盒」这类严重缺陷。
+一旦有人新增状态或转换，图结构类检查能立刻发现「出现了无法回收的沙盒」这类严重缺陷。
 
 用法：
     python3 tools/validate_state_machine.py
@@ -68,11 +78,11 @@ def check(spec: dict) -> list[str]:
 
     # INV-1 pending_review 只读
     if states.get("pending_review", {}).get("connectable") != "readonly":
-        violations.append("INV-1 pending_review 必须为只读，否则审批内容与实际合并内容可能不一致")
+        violations.append("INV-1 pending_review 必须为只读，否则审批内容与实际导出内容可能不一致")
 
-    # INV-2 merging 不可被丢弃打断
-    if any(tr["from"] == "merging" and tr["to"] == "discarding" for tr in transitions):
-        violations.append("INV-2 merging 状态不允许直接转入 discarding")
+    # INV-2 exporting 不可被丢弃打断（图结构不变式）
+    if any(tr["from"] == "exporting" and tr["to"] == "discarding" for tr in transitions):
+        violations.append("INV-2 exporting 状态不允许直接转入 discarding")
 
     # INV-3 discarded 无出边
     if any(tr["from"] == "discarded" for tr in transitions):
@@ -90,12 +100,14 @@ def check(spec: dict) -> list[str]:
     if free != {"discarded"}:
         violations.append(f"INV-5 不占配额的状态集合应为 {{discarded}}，实际为 {free or '{}'}")
 
-    # INV-6 合并失败必须已回退生产库
+    # INV-6 【标签约定检查，非行为验证】导出失败的 trigger 必须声明未写生产库。
+    # 首版设计上根本不写生产库（05 文档 1.2），因此这条只是防止有人在不做决策变更的情况下
+    # 悄悄把写生产的语义塞回状态机。它检查的是字符串标签，实现是否真的没写生产库本脚本无从得知。
     for tr in transitions:
-        if tr["from"] == "merging" and tr["to"] == "failed":
-            if "production_rolled_back" not in tr.get("trigger", ""):
+        if tr["from"] == "exporting" and tr["to"] == "failed":
+            if "no_production_write" not in tr.get("trigger", ""):
                 violations.append(
-                    "INV-6 merging->failed 的 trigger 必须体现生产库已回退，实际为 %s" % tr.get("trigger")
+                    "INV-6【标签检查】exporting->failed 的 trigger 应声明未写生产库，实际为 %s" % tr.get("trigger")
                 )
 
     # 回收顺序：凭据必须最先回收，物理副本必须晚于挂载任务删除

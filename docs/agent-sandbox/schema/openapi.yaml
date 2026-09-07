@@ -151,7 +151,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorBody' }
 
-  /v1/sandboxes/{sandbox_id}/merge-requests:
+  /v1/sandboxes/{sandbox_id}/change-requests:
     parameters:
       - $ref: '#/components/parameters/SandboxId'
     post:
@@ -172,33 +172,33 @@ paths:
           description: 审批单已创建
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/MergeRequest' }
+              schema: { $ref: '#/components/schemas/ChangeRequest' }
         '422':
           description: changeset_incomplete / high_risk_ddl_requires_human_ack
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorBody' }
 
-  /v1/merge-requests/{merge_request_id}:
+  /v1/change-requests/{change_request_id}:
     parameters:
-      - $ref: '#/components/parameters/MergeRequestId'
+      - $ref: '#/components/parameters/ChangeRequestId'
     get:
       summary: 查询审批状态
-      operationId: getMergeRequest
+      operationId: getChangeRequest
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/MergeRequest' }
+              schema: { $ref: '#/components/schemas/ChangeRequest' }
 
-  /v1/merge-requests/{merge_request_id}/dry-run:
+  /v1/change-requests/{change_request_id}/dry-run:
     parameters:
-      - $ref: '#/components/parameters/MergeRequestId'
+      - $ref: '#/components/parameters/ChangeRequestId'
     post:
-      summary: 合并干跑，返回影响面报告
-      description: 不修改生产库，仅产出将要执行的操作序列、影响行数与冲突检测结论。
-      operationId: dryRunMerge
+      summary: 导出干跑，返回影响面报告
+      description: 只读。产出影响表与行数、行级冲突探测结论、DDL 清单。首版任何接口都不写生产库。
+      operationId: dryRunExport
       responses:
         '200':
           description: OK
@@ -206,12 +206,12 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/DryRunReport' }
 
-  /v1/merge-requests/{merge_request_id}/approve:
+  /v1/change-requests/{change_request_id}/approve:
     parameters:
-      - $ref: '#/components/parameters/MergeRequestId'
+      - $ref: '#/components/parameters/ChangeRequestId'
     post:
-      summary: 审批通过并触发合并（仅人类凭据）
-      operationId: approveMergeRequest
+      summary: 审批通过并触发变更集导出（仅人类凭据）
+      operationId: approveChangeRequest
       requestBody:
         required: true
         content:
@@ -227,7 +227,7 @@ paths:
                   description: 变更集含 risk=high 的 DDL 时必须显式置 true
       responses:
         '202':
-          description: 合并已触发
+          description: 导出已触发
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TaskRef' }
@@ -237,17 +237,17 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorBody' }
         '409':
-          description: merge_conflict_detected
+          description: row_level_conflict_detected
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorBody' }
 
-  /v1/merge-requests/{merge_request_id}/reject:
+  /v1/change-requests/{change_request_id}/reject:
     parameters:
-      - $ref: '#/components/parameters/MergeRequestId'
+      - $ref: '#/components/parameters/ChangeRequestId'
     post:
       summary: 审批拒绝（仅人类凭据）
-      operationId: rejectMergeRequest
+      operationId: rejectChangeRequest
       requestBody:
         required: true
         content:
@@ -262,7 +262,7 @@ paths:
           description: 已拒绝
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/MergeRequest' }
+              schema: { $ref: '#/components/schemas/ChangeRequest' }
 
   /v1/tasks/{task_id}:
     parameters:
@@ -276,6 +276,28 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Task' }
+
+  /v1/change-requests/{change_request_id}/export:
+    parameters:
+      - $ref: '#/components/parameters/ChangeRequestId'
+    get:
+      summary: 下载变更集导出物（首版的最终交付形式）
+      description: >
+        首版不写生产库：审批通过后产出经审核的变更集导出物，由客户既有的数据库变更流程执行。
+        导出物包含净状态差 ChangeSet、影响面报告，以及可选的变更脚本骨架。
+        若沙盒启用了脱敏，导出物必须标注哪些列的值来自脱敏数据、不可直接写入生产。
+      operationId: getExportArtifact
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExportArtifact' }
+        '409':
+          description: export_not_ready —— 审批尚未通过或导出仍在进行中
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorBody' }
 
 components:
   securitySchemes:
@@ -292,8 +314,8 @@ components:
       in: path
       required: true
       schema: { type: string }
-    MergeRequestId:
-      name: merge_request_id
+    ChangeRequestId:
+      name: change_request_id
       in: path
       required: true
       schema: { type: string }
@@ -313,7 +335,7 @@ components:
   schemas:
     SandboxState:
       type: string
-      enum: [creating, ready, checkpointing, rolling_back, diffing, pending_review, merging, merged, discarding, discarded, failed]
+      enum: [creating, ready, checkpointing, rolling_back, diffing, pending_review, exporting, exported, discarding, discarded, failed]
 
     CreateSandboxRequest:
       type: object
@@ -390,13 +412,28 @@ components:
           type: string
           description: 回滚到某检查点会级联清理其后的检查点
 
-    MergeRequest:
+    ExportArtifact:
+      type: object
+      required: [change_request_id, changeset_checksum, artifact_format, masking_applied]
+      properties:
+        change_request_id: { type: string }
+        changeset_checksum: { type: string }
+        artifact_format: { type: string, enum: [changeset_json, impact_report, change_script] }
+        change_script: { type: string, nullable: true, description: 变更脚本骨架，需在生产侧基于真实数据重新定位 }
+        masking_applied: { type: boolean, description: 沙盒是否启用了脱敏 }
+        masked_columns:
+          type: array
+          items: { type: string }
+          description: 被脱敏的列清单。非空时导出物中的对应值不可直接写入生产（见 05 文档 1.1）
+        download_url: { type: string, nullable: true }
+
+    ChangeRequest:
       type: object
       properties:
-        merge_request_id: { type: string }
+        change_request_id: { type: string }
         sandbox_id: { type: string }
         changeset_id: { type: string }
-        state: { type: string, enum: [pending, approved, rejected, merging, merged, failed] }
+        state: { type: string, enum: [pending, approved, rejected, exporting, exported, failed] }
         submitted_by: { type: string }
         submitted_by_type: { type: string, enum: [human, agent] }
         reason: { type: string }
@@ -407,7 +444,7 @@ components:
     DryRunReport:
       type: object
       properties:
-        merge_request_id: { type: string }
+        change_request_id: { type: string }
         statements_planned: { type: integer }
         rows_affected_estimate: { type: integer }
         tables:
@@ -456,7 +493,8 @@ components:
             - masking_bypass_denied
             - quota_exceeded
             - sandbox_state_conflict
-            - merge_conflict_detected
+            - row_level_conflict_detected
+            - export_not_ready
             - changeset_incomplete
             - high_risk_ddl_requires_human_ack
             - capacity_unavailable

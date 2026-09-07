@@ -6,6 +6,9 @@
 --   3. 用 spike/compare_changesets.py 比对两份结果。
 --
 -- 每个 STEP 后的注释是**期望的 ChangeSet 语义**，人工核对时以此为准。
+--
+-- 【第二轮修订】ChangeSet 的规范形式已唯一确定为「净状态差」（01 文档第 3 节），
+-- 因此每个 STEP 的期望结果都是唯一的，不再有「折叠 or 保留序列」的二选一。
 
 CREATE DATABASE IF NOT EXISTS app;
 USE app;
@@ -67,10 +70,9 @@ UPDATE orders SET status = 'bulk' WHERE id BETWEEN 2000 AND 2499;
 COMMIT;
 
 -- STEP 5 同一行连续修改 3 次
--- 期望：与合并回切语义一致即可，但 A/B 两条路径必须给出**相同**的表示。
---       若采用「折叠为净变更」，结果应为 1 条 update：pending -> final。
---       若采用「保留操作序列」，结果应为 3 条 update，且顺序一致。
---       本项的实际结论需写入 02 文档第 6 节。
+-- 期望（唯一）：**1 条 update**，before.status = 修改前的原值，after.status = 'final'。
+--       逻辑日志路径必须在输出前折叠（01 文档 3.3）；块级差异路径天然如此。
+--       第一轮写的是「折叠 or 保留序列，两条路径表示必须相同」——这是一个永远无法通过的判据，已废弃。
 UPDATE orders SET status = 'step5-a' WHERE id = 1004;
 UPDATE orders SET status = 'step5-b' WHERE id = 1004;
 UPDATE orders SET status = 'final'   WHERE id = 1004;
@@ -90,17 +92,25 @@ UPDATE orders SET status = 'should-not-appear' WHERE id = 1005;
 ROLLBACK;
 
 -- STEP 8 DDL
--- 期望：ddl_changes 1 条，ddl_type = alter_table，risk = high，门禁默认拒绝合并
+-- 期望：ddl_changes 1 条，ddl_type = alter_table，risk = high，
+--       门禁标记 requires_explicit_ddl_ack=true（需审批人逐条确认），
+--       但**不阻断**整个变更集（第一轮的「默认拒绝」会导致组合死锁，见 01 文档 5.3）
 ALTER TABLE orders ADD COLUMN memo VARCHAR(200) NULL;
 
 -- STEP 9 无主键表的 UPDATE
--- 期望：该表的 primary_key = []，integrity.completeness = unknown，门禁拒绝
+-- 期望：该表的 primary_key = []，integrity.completeness = unknown，门禁阻断（能力边界 6.4）
 UPDATE no_pk_audit SET action = 'changed' WHERE actor = 'seed';
 COMMIT;
 
 -- STEP 10 大字段更新
--- 期望：按边界 5.4，只记录变更标志与长度；A/B 两条路径行为必须一致
+-- 期望：按边界 6.5，只记录变更标志与长度；A/B 两条路径行为必须一致
 UPDATE orders SET note = REPEAT('x', 100000) WHERE id = 1001;
 COMMIT;
 
 -- ===== 采集终点 =====
+
+-- STEP 11 先 DELETE 后以同主键 INSERT（第二轮新增）
+-- 期望（唯一）：折叠为 1 条 update，before = 删除前的值，after = 重新插入的值（01 文档 3.3）
+DELETE FROM orders WHERE id = 1003;
+INSERT INTO orders (id, status, amount, note) VALUES (1003, 'reinserted', 77.00, NULL);
+COMMIT;
