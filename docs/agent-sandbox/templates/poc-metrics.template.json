@@ -1,0 +1,36 @@
+{
+  "$comment": "POC 实测指标填写模板。指标定义与判定规则见 08-poc-acceptance.md，判定由 tools/poc_gate.py 执行。所有 null 值必须在 POC 结束前填入实测数字，缺失即视为未达标。",
+  "run_id": "poc-<客户>-<日期>-01",
+  "customer": "",
+  "db_type": "mysql",
+  "started_at": null,
+  "finished_at": null,
+  "environment": {
+    "sandbox_node_same_datacenter_as_storage": null,
+    "dataset": "medium",
+    "concurrency_model": "M2"
+  },
+  "metrics": {
+    "source_side_additions": null,
+    "changeset_consistency_rate": null,
+    "production_impacted_on_failure_count": null,
+    "agent_self_approval_count": null,
+    "unreclaimed_sandbox_count": null,
+
+    "create_near_current_p95_seconds": null,
+    "end_to_end_time_reduction_pct": null,
+    "max_concurrent_sandboxes": null,
+    "estimate_error_ratio": null,
+    "merge_success_rate": null,
+    "backup_task_degradation_pct": null,
+    "storage_ratio_vs_full_clone": null,
+    "masking_enabled_rate": null
+  },
+  "evidence": {
+    "source_side_additions": "审计日志导出 + 源端权限快照对比",
+    "changeset_consistency_rate": "spike/compare_changesets.py 对 fixture 的比对输出",
+    "production_impacted_on_failure_count": "注入失败演练记录",
+    "agent_self_approval_count": "审批审计记录（requester_type=agent 且 decided_by 为同一主体的条数）"
+  },
+  "notes": ""
+}
