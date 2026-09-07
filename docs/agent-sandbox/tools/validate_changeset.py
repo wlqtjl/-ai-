@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""ChangeSet 校验器。
+"""ChangeSet 契约自洽性检查器。
 
-两层校验：
-1. 结构校验：对 schema/changeset.schema.json 做 JSON Schema 验证（缺少 jsonschema 依赖时降级为内建的最小结构检查）。
-2. 门禁校验（gate）：实现 01-changeset-model.md 中的硬规则，判断该 ChangeSet 是否允许进入审批/合并流程。
+⚠️ 本脚本做的是**契约自洽性检查**，不构成对系统行为的任何验证。
+它校验的是「JSON 文件是否符合本仓库自己定义的规则」，而不是「实现是否正确」或「差异是否真的没有漏报」。
+真正的正确性证据只能来自 02 文档的 fixture 全集比对与真实环境实测。
+
+三层检查：
+1. 结构检查：对 schema/changeset.schema.json 做 JSON Schema 验证（缺少 jsonschema 依赖时降级为内建的最小结构检查）。
+2. 净状态差不变式：同一表内主键唯一、before != after —— 对应 01 文档第 3 节的规范形式。
+3. 门禁规则（gate）：实现 01-changeset-model.md 中的硬规则，区分「阻断」与「需人工逐条确认」。
 
 用法：
     python3 tools/validate_changeset.py examples/*.json
@@ -63,8 +68,46 @@ def _fallback_structural_errors(doc: Any) -> list[str]:
 # --- 门禁规则 -------------------------------------------------------------
 
 
+def net_diff_violations(doc: dict[str, Any]) -> list[str]:
+    """净状态差不变式检查（01 文档第 3 节）。
+
+    ChangeSet 的规范形式是净状态差而非操作序列，因此：
+    - 同一张表内每个主键最多出现一次；
+    - update 的 before 与 after 不得完全相同（净效果为零的行必须在折叠时剔除）。
+    """
+    violations: list[str] = []
+    for tc in doc.get("table_changes", []):
+        seen: dict[str, int] = {}
+        for row in tc.get("rows", []):
+            key = json.dumps(row.get("pk"), sort_keys=True, ensure_ascii=False)
+            seen[key] = seen.get(key, 0) + 1
+        for key, count in seen.items():
+            if count > 1:
+                violations.append(
+                    "表 %s 的主键 %s 出现 %d 次，违反净状态差规范（逻辑日志路径未做折叠？）"
+                    % (tc.get("table"), key, count)
+                )
+        for row in tc.get("rows", []):
+            if row.get("op") == "update" and (row.get("before") or {}) == (row.get("after") or {}):
+                violations.append("表 %s 行 %s 的 before 与 after 相同，净效果为零，应在折叠时剔除" % (tc.get("table"), row.get("pk")))
+    return violations
+
+
+def ddl_acks_required(doc: dict[str, Any]) -> list[str]:
+    """高风险 DDL 需要审批人逐条确认 —— 注意这是『需额外确认』而非『阻断整个变更集』。
+
+    第一轮把两者混为一谈，与『整变更集全量处理』叠加后导致：
+    Agent 只要碰过一次 DDL，整个变更集就被拦死，而 schema 变更恰是核心价值场景。
+    """
+    return [
+        "高风险 DDL 需审批人逐条确认：%s（%s）" % (d.get("object", "?"), d.get("ddl_type"))
+        for d in doc.get("ddl_changes", [])
+        if d.get("risk") == "high"
+    ]
+
+
 def gate(doc: dict[str, Any]) -> list[str]:
-    """返回拒绝理由列表；空列表表示允许进入审批流程。"""
+    """返回**阻断**理由列表；空列表表示允许进入审批流程（可能仍需 DDL 逐条确认）。"""
     reasons: list[str] = []
     integrity = doc.get("integrity", {})
 
@@ -77,18 +120,13 @@ def gate(doc: dict[str, Any]) -> list[str]:
     if doc.get("conflicts"):
         reasons.append("存在 %d 条冲突，首版策略为冲突即拒绝，需基于最新时间点重建沙盒" % len(doc["conflicts"]))
 
-    high_risk = [d for d in doc.get("ddl_changes", []) if d.get("risk") == "high"]
-    if high_risk:
-        reasons.append(
-            "包含 %d 条高风险 DDL（%s），默认拒绝，需人工显式放行"
-            % (len(high_risk), ", ".join(d.get("object", "?") for d in high_risk))
-        )
+    reasons.extend(net_diff_violations(doc))
 
     for tc in doc.get("table_changes", []):
         if tc.get("rows_truncated"):
             reasons.append("表 %s 的行级明细被截断，无法保证漏报为 0" % tc.get("table"))
         if not tc.get("primary_key"):
-            reasons.append("表 %s 无主键，行定位不可靠（首版能力边界 5.3）" % tc.get("table"))
+            reasons.append("表 %s 无主键，行定位不可靠（首版能力边界 6.4）" % tc.get("table"))
 
     return reasons
 
@@ -148,10 +186,13 @@ def check_file(path: str, schema: dict[str, Any]) -> tuple[bool, bool]:
 
     warnings = consistency_warnings(doc)
     reasons = gate(doc)
+    acks = ddl_acks_required(doc)
     status = "ALLOW" if not reasons else "BLOCK"
-    print(f"[ OK ] {name} 结构校验通过，门禁结论：{status}")
+    print(f"[ OK ] {name} 结构检查通过，门禁结论：{status}")
     for reason in reasons:
-        print(f"       · 拒绝理由：{reason}")
+        print(f"       · 阻断理由：{reason}")
+    for ack in acks:
+        print(f"       ? 需人工确认：{ack}")
     for warning in warnings:
         print(f"       ! 一致性告警：{warning}")
     return True, not reasons
@@ -161,9 +202,10 @@ def self_test() -> int:
     schema = load_schema()
     examples = os.path.join(HERE, "..", "examples")
     cases = {
-        # 两个示例都包含 risk=high 的 ALTER TABLE，按 01 文档规则应被门禁拒绝（需人工放行）。
-        "changeset.mysql.example.json": (True, False),
-        "changeset.block-diff.example.json": (True, False),
+        # 第二轮修订：高风险 DDL 不再阻断整个变更集，只要求逐条确认，故前两个示例应为 ALLOW。
+        "changeset.mysql.example.json": (True, True),
+        "changeset.block-diff.example.json": (True, True),
+        # 该示例同时含行级冲突与截断，两条都是真正的阻断项。
         "changeset.conflict.example.json": (True, False),
     }
     failures = 0
@@ -173,18 +215,34 @@ def self_test() -> int:
             print(f"[SELFTEST FAIL] {name}: expected {(want_struct, want_allow)}, got {got}")
             failures += 1
 
-    # 门禁必须拒绝高风险 DDL：mysql 示例含 ADD COLUMN（risk=high），故预期 BLOCK 才对。
     with open(os.path.join(examples, "changeset.mysql.example.json"), encoding="utf-8") as fh:
         doc = json.load(fh)
-    if not gate(doc):
-        print("[SELFTEST FAIL] 含高风险 DDL 的变更集本应被门禁拒绝")
+
+    # 高风险 DDL 应产生「需确认」而非「阻断」。
+    if not ddl_acks_required(doc):
+        print("[SELFTEST FAIL] 含高风险 DDL 的变更集本应要求逐条确认")
+        failures += 1
+    if gate(doc):
+        print("[SELFTEST FAIL] 仅含高风险 DDL 不应阻断整个变更集（缺陷 12：组合路径死锁）")
         failures += 1
 
-    doc_no_ddl = json.loads(json.dumps(doc))
-    doc_no_ddl["ddl_changes"] = []
-    doc_no_ddl["summary"]["ddl_count"] = 0
-    if gate(doc_no_ddl):
-        print("[SELFTEST FAIL] 去掉高风险 DDL 后本应放行")
+    # 净状态差不变式：同一主键出现两次必须被拦下。
+    dup = json.loads(json.dumps(doc))
+    first_table = dup["table_changes"][0]
+    first_table["rows"].append(json.loads(json.dumps(first_table["rows"][0])))
+    if not net_diff_violations(dup):
+        print("[SELFTEST FAIL] 同一主键重复出现本应违反净状态差不变式")
+        failures += 1
+
+    # before == after 的 update 必须被拦下。
+    noop = json.loads(json.dumps(doc))
+    for tc in noop["table_changes"]:
+        for row in tc["rows"]:
+            if row["op"] == "update":
+                row["after"] = json.loads(json.dumps(row["before"]))
+                break
+    if not net_diff_violations(noop):
+        print("[SELFTEST FAIL] before==after 的 update 本应违反净状态差不变式")
         failures += 1
 
     print("self-test: " + ("PASS" if failures == 0 else f"FAIL ({failures})"))

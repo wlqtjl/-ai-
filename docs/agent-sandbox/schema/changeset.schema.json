@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://yimu.example/agent-sandbox/changeset.schema.json",
   "title": "Agent Sandbox ChangeSet",
-  "description": "跨库统一的沙盒变更集表示。两条采集路径（逻辑日志 / 块级差异）必须产出同一结构，以便交叉比对。",
+  "description": "跨库统一的沙盒变更集表示。规范形式为『净状态差』（net state diff），非操作序列：同一表内每个主键最多出现一次，逻辑日志路径必须在输出前折叠。position/txn_id/occurred_at 为可选溯源信息，不参与合并排序与路径比对。",
   "type": "object",
   "required": [
     "schema_version",
@@ -18,59 +18,189 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "const": "1.0" },
-    "changeset_id": { "type": "string", "minLength": 1 },
-    "sandbox_id": { "type": "string", "minLength": 1 },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "changeset_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sandbox_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "capture": {
       "type": "object",
-      "required": ["path", "db_type", "captured_at"],
+      "required": [
+        "path",
+        "db_type",
+        "captured_at"
+      ],
       "additionalProperties": false,
       "properties": {
-        "path": { "enum": ["logical_log", "block_diff", "hybrid"] },
-        "db_type": { "enum": ["oracle", "mysql", "postgresql", "sqlserver", "db2", "dameng", "kingbase", "tdsql"] },
-        "source": { "type": "string" },
-        "start_position": { "type": ["string", "null"] },
-        "end_position": { "type": ["string", "null"] },
-        "captured_at": { "type": "string", "format": "date-time" }
+        "path": {
+          "enum": [
+            "logical_log",
+            "block_diff",
+            "hybrid"
+          ]
+        },
+        "db_type": {
+          "enum": [
+            "oracle",
+            "mysql",
+            "postgresql",
+            "sqlserver",
+            "db2",
+            "dameng",
+            "kingbase",
+            "tdsql"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "start_position": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "end_position": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "captured_at": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "baseline": {
       "type": "object",
-      "required": ["timing_mode", "baseline_time"],
+      "required": [
+        "timing_mode",
+        "baseline_time"
+      ],
       "additionalProperties": false,
       "properties": {
-        "timing_mode": { "enum": ["near_current", "point_in_time"] },
-        "baseline_time": { "type": "string", "format": "date-time" },
-        "snapshot_id": { "type": ["string", "null"] }
+        "timing_mode": {
+          "enum": [
+            "near_current",
+            "point_in_time"
+          ]
+        },
+        "baseline_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "snapshot_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "summary": {
       "type": "object",
-      "required": ["tables_affected", "rows_inserted", "rows_updated", "rows_deleted", "ddl_count"],
+      "required": [
+        "tables_affected",
+        "rows_inserted",
+        "rows_updated",
+        "rows_deleted",
+        "ddl_count"
+      ],
       "additionalProperties": false,
       "properties": {
-        "tables_affected": { "type": "integer", "minimum": 0 },
-        "rows_inserted": { "type": "integer", "minimum": 0 },
-        "rows_updated": { "type": "integer", "minimum": 0 },
-        "rows_deleted": { "type": "integer", "minimum": 0 },
-        "ddl_count": { "type": "integer", "minimum": 0 },
-        "highest_risk": { "enum": ["low", "medium", "high"] }
+        "tables_affected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_inserted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_updated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_deleted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ddl_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "highest_risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        }
       }
     },
     "ddl_changes": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["ddl_type", "object", "statement", "reversible", "risk"],
+        "required": [
+          "ddl_type",
+          "object",
+          "statement",
+          "reversible",
+          "risk"
+        ],
         "additionalProperties": false,
         "properties": {
-          "ddl_type": { "enum": ["create_table", "drop_table", "alter_table", "create_index", "drop_index", "truncate", "other"] },
-          "object": { "type": "string" },
-          "statement": { "type": "string" },
-          "reversible": { "type": "boolean" },
-          "risk": { "enum": ["low", "medium", "high"] },
-          "position": { "type": ["string", "null"] },
-          "occurred_at": { "type": ["string", "null"], "format": "date-time" }
+          "ddl_type": {
+            "enum": [
+              "create_table",
+              "drop_table",
+              "alter_table",
+              "create_index",
+              "drop_index",
+              "truncate",
+              "other"
+            ]
+          },
+          "object": {
+            "type": "string"
+          },
+          "statement": {
+            "type": "string"
+          },
+          "reversible": {
+            "type": "boolean"
+          },
+          "risk": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "position": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "occurred_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "requires_explicit_ddl_ack": {
+            "type": "boolean",
+            "description": "risk=high 时应为 true：审批人须逐条确认。这是『需额外确认』而非『阻断整个变更集』。"
+          }
         }
       }
     },
@@ -78,23 +208,45 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["table", "primary_key", "counts", "rows"],
+        "required": [
+          "table",
+          "primary_key",
+          "counts",
+          "rows"
+        ],
         "additionalProperties": false,
         "properties": {
-          "table": { "type": "string" },
+          "table": {
+            "type": "string"
+          },
           "primary_key": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "空数组表示无主键表，此时 integrity.completeness 必须为 unknown"
           },
           "counts": {
             "type": "object",
-            "required": ["insert", "update", "delete"],
+            "required": [
+              "insert",
+              "update",
+              "delete"
+            ],
             "additionalProperties": false,
             "properties": {
-              "insert": { "type": "integer", "minimum": 0 },
-              "update": { "type": "integer", "minimum": 0 },
-              "delete": { "type": "integer", "minimum": 0 }
+              "insert": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "update": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "delete": {
+                "type": "integer",
+                "minimum": 0
+              }
             }
           },
           "rows_truncated": {
@@ -103,7 +255,9 @@
           },
           "rows": {
             "type": "array",
-            "items": { "$ref": "#/definitions/rowChange" }
+            "items": {
+              "$ref": "#/definitions/rowChange"
+            }
           }
         }
       }
@@ -112,63 +266,226 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["level", "table", "reason"],
+        "required": [
+          "level",
+          "table",
+          "reason"
+        ],
         "additionalProperties": false,
         "properties": {
-          "level": { "enum": ["table", "row"] },
-          "table": { "type": "string" },
-          "pk": { "type": ["object", "null"] },
-          "reason": { "enum": ["production_changed_after_baseline", "schema_drift", "unresolvable"] },
-          "production_last_change": { "type": ["string", "null"], "format": "date-time" },
-          "baseline_time": { "type": ["string", "null"], "format": "date-time" }
+          "level": {
+            "enum": [
+              "table",
+              "row"
+            ],
+            "description": "row=行级乐观并发冲突；table=结构级冲突（如生产库已 DROP 该表）"
+          },
+          "table": {
+            "type": "string"
+          },
+          "pk": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "reason": {
+            "enum": [
+              "production_row_changed_after_baseline",
+              "production_row_missing",
+              "schema_drift",
+              "table_dropped_in_production",
+              "unresolvable"
+            ]
+          },
+          "baseline_time": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "production_current": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "生产库当前值（行级乐观并发控制的比对结果）"
+          },
+          "sandbox_before": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "沙盒记录的 before 镜像，与 production_current 不等即判定冲突"
+          }
         }
       }
     },
     "integrity": {
       "type": "object",
-      "required": ["completeness", "rows_captured"],
+      "required": [
+        "completeness",
+        "rows_captured"
+      ],
       "additionalProperties": false,
       "properties": {
-        "completeness": { "enum": ["complete", "truncated", "unknown"] },
-        "reason": { "type": ["string", "null"] },
-        "rows_captured": { "type": "integer", "minimum": 0 },
-        "bytes_scanned": { "type": ["integer", "null"], "minimum": 0 },
-        "checksum": { "type": ["string", "null"] }
+        "completeness": {
+          "enum": [
+            "complete",
+            "truncated",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rows_captured": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytes_scanned": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "checksum": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     }
   },
   "definitions": {
     "rowChange": {
       "type": "object",
-      "required": ["op", "pk"],
+      "required": [
+        "op",
+        "pk"
+      ],
       "additionalProperties": false,
       "properties": {
-        "op": { "enum": ["insert", "update", "delete"] },
-        "pk": { "type": "object" },
-        "before": { "type": ["object", "null"] },
-        "after": { "type": ["object", "null"] },
-        "changed_columns": { "type": "array", "items": { "type": "string" } },
-        "txn_id": { "type": ["string", "null"] },
-        "position": { "type": ["string", "null"] },
-        "occurred_at": { "type": ["string", "null"], "format": "date-time" }
+        "op": {
+          "enum": [
+            "insert",
+            "update",
+            "delete"
+          ]
+        },
+        "pk": {
+          "type": "object"
+        },
+        "before": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "after": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "changed_columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "txn_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "可选溯源信息，不参与合并排序与 A/B 比对；块级差异路径下恒为 null"
+        },
+        "position": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "可选溯源信息，不参与合并排序与 A/B 比对；块级差异路径下恒为 null"
+        },
+        "occurred_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "可选溯源信息，不参与合并排序与 A/B 比对；块级差异路径下恒为 null"
+        }
       },
       "allOf": [
         {
-          "if": { "properties": { "op": { "const": "insert" } } },
-          "then": { "required": ["after"], "properties": { "before": { "type": "null" } } }
-        },
-        {
-          "if": { "properties": { "op": { "const": "delete" } } },
-          "then": { "required": ["before"], "properties": { "after": { "type": "null" } } }
-        },
-        {
-          "if": { "properties": { "op": { "const": "update" } } },
-          "then": {
-            "required": ["before", "after", "changed_columns"],
+          "if": {
             "properties": {
-              "before": { "type": "object" },
-              "after": { "type": "object" },
-              "changed_columns": { "minItems": 1 }
+              "op": {
+                "const": "insert"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "after"
+            ],
+            "properties": {
+              "before": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "delete"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "before"
+            ],
+            "properties": {
+              "after": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "update"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "before",
+              "after",
+              "changed_columns"
+            ],
+            "properties": {
+              "before": {
+                "type": "object"
+              },
+              "after": {
+                "type": "object"
+              },
+              "changed_columns": {
+                "minItems": 1
+              }
             }
           }
         }

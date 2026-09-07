@@ -27,16 +27,32 @@
   "table_changes": [
     {
       "table": "APP.ORDERS",
-      "primary_key": ["ID"],
-      "counts": { "insert": 0, "update": 2, "delete": 0 },
+      "primary_key": [
+        "ID"
+      ],
+      "counts": {
+        "insert": 0,
+        "update": 2,
+        "delete": 0
+      },
       "rows_truncated": true,
       "rows": [
         {
           "op": "update",
-          "pk": { "ID": 2001 },
-          "before": { "ID": 2001, "STATUS": "NEW" },
-          "after": { "ID": 2001, "STATUS": "DONE" },
-          "changed_columns": ["STATUS"],
+          "pk": {
+            "ID": 2001
+          },
+          "before": {
+            "ID": 2001,
+            "STATUS": "NEW"
+          },
+          "after": {
+            "ID": 2001,
+            "STATUS": "DONE"
+          },
+          "changed_columns": [
+            "STATUS"
+          ],
           "txn_id": "0a.00c.000391",
           "position": "SCN:8123500",
           "occurred_at": "2026-09-07T04:55:12Z"
@@ -46,11 +62,20 @@
   ],
   "conflicts": [
     {
-      "level": "table",
+      "level": "row",
       "table": "APP.ORDERS",
-      "pk": null,
-      "reason": "production_changed_after_baseline",
-      "production_last_change": "2026-09-07T04:01:00Z",
+      "pk": {
+        "id": 1024
+      },
+      "reason": "production_row_changed_after_baseline",
+      "production_current": {
+        "status": "SHIPPED",
+        "amount": 199.0
+      },
+      "sandbox_before": {
+        "status": "PENDING",
+        "amount": 199.0
+      },
       "baseline_time": "2026-09-07T03:00:00Z"
     }
   ],
