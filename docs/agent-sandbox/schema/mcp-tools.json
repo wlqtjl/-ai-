@@ -1,0 +1,127 @@
+{
+  "$comment": "Agent 沙盒 MCP 工具契约。刻意只暴露 4 个工具：Agent 能申请、能看差异、能提交审批、能丢弃，但不能审批、不能执行合并。",
+  "mcp_server": "yimu-dcm-agent-sandbox",
+  "version": "1.0.0-draft",
+  "security_invariants": [
+    "服务端从凭据推导 requester_type，忽略参数中的任何身份声明，以抵御提示注入伪造身份",
+    "本工具集不提供 approve / reject / merge 能力，Agent 无法通过任何工具组合达成自审自批",
+    "所有工具调用必须携带 purpose_tag 并落审计",
+    "ttl_seconds 无默认值，缺失即拒绝，防止沙盒资源泄漏",
+    "脱敏默认开启，关闭脱敏不通过本工具集暴露"
+  ],
+  "tools": [
+    {
+      "name": "request_data_sandbox",
+      "description": "申请一个可读写、用完即焚、不影响生产的数据库沙盒。返回受理结果与预计就绪时间；沙盒未就绪前不可连接，需用 get_sandbox_diff 之外的状态查询或按 poll_after_seconds 重试。point_in_time 模式可能需要回放日志，耗时显著长于 near_current。",
+      "inputSchema": {
+        "type": "object",
+        "required": ["source_id", "timing_mode", "ttl_seconds", "purpose_tag"],
+        "additionalProperties": false,
+        "properties": {
+          "source_id": { "type": "string", "description": "源库或备份集标识" },
+          "timing_mode": {
+            "type": "string",
+            "enum": ["near_current", "point_in_time"],
+            "description": "near_current 命中最近快照，分钟级；point_in_time 需回放日志，耗时随时间跨度增长"
+          },
+          "point_in_time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "timing_mode=point_in_time 时必填"
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "minimum": 300,
+            "maximum": 604800,
+            "description": "沙盒存活时长，必填，到期自动强制回收"
+          },
+          "mount_profile": { "type": "string", "default": "sandbox-small" },
+          "purpose_tag": { "type": "string", "minLength": 1, "maxLength": 64, "description": "用途标签，进审计" }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": { "type": "string" },
+          "state": { "type": "string" },
+          "estimate_basis": { "type": "string", "enum": ["snapshot_hit", "log_replay"] },
+          "estimated_ready_at": { "type": "string", "format": "date-time" },
+          "poll_after_seconds": { "type": "integer" }
+        }
+      }
+    },
+    {
+      "name": "get_sandbox_diff",
+      "description": "获取沙盒相对基线的变更摘要（ChangeSet）。若 integrity.completeness 不是 complete，说明差异可能漏报，该变更集不能用于提交审批，应重建沙盒重做。",
+      "inputSchema": {
+        "type": "object",
+        "required": ["sandbox_id"],
+        "additionalProperties": false,
+        "properties": {
+          "sandbox_id": { "type": "string" },
+          "format": { "type": "string", "enum": ["summary", "full"], "default": "summary" },
+          "max_rows_per_table": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 100 }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "结构见 schema/changeset.schema.json；超限时 rows_truncated=true，不静默截断",
+        "properties": {
+          "changeset_id": { "type": "string" },
+          "summary": { "type": "object" },
+          "table_changes": { "type": "array", "items": { "type": "object" } },
+          "ddl_changes": { "type": "array", "items": { "type": "object" } },
+          "conflicts": { "type": "array", "items": { "type": "object" } },
+          "integrity": { "type": "object" }
+        }
+      }
+    },
+    {
+      "name": "submit_sandbox_for_review",
+      "description": "把沙盒中的变更集提交给人工审批。提交不等于合并：是否合并回生产由人类审批人决定，Agent 无法自行通过审批。含高风险 DDL 或存在冲突时，提交会被拒绝并返回原因。",
+      "inputSchema": {
+        "type": "object",
+        "required": ["sandbox_id", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "sandbox_id": { "type": "string" },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "说明这些变更做了什么、为什么需要合并回生产，供审批人判断"
+          },
+          "reviewers": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "merge_request_id": { "type": "string" },
+          "state": { "type": "string", "enum": ["pending"] },
+          "rejected_reason": { "type": ["string", "null"] }
+        }
+      }
+    },
+    {
+      "name": "discard_sandbox",
+      "description": "丢弃沙盒并释放资源。丢弃是不可逆的，沙盒内所有未合并的变更将永久丢失；这也是 Agent 出错时的标准止损动作。",
+      "inputSchema": {
+        "type": "object",
+        "required": ["sandbox_id"],
+        "additionalProperties": false,
+        "properties": {
+          "sandbox_id": { "type": "string" },
+          "reason": { "type": "string", "maxLength": 500 }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": { "type": "string" },
+          "state": { "type": "string", "enum": ["discarding", "discarded"] }
+        }
+      }
+    }
+  ]
+}

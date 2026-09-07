@@ -1,0 +1,466 @@
+openapi: 3.0.3
+info:
+  title: 一牧 DCM · Agent 数据操作沙盒 API
+  version: "1.0.0-draft"
+  description: >
+    沙盒编排 API 契约草案。设计要点：所有创建类操作异步返回；timing_mode 显式区分
+    near_current 与 point_in_time 两条性能路径；ttl_seconds 强制必填；审批接口仅接受人类凭据。
+servers:
+  - url: https://dcm.example.internal/api
+
+security:
+  - bearerAuth: []
+
+paths:
+  /v1/sandboxes:
+    post:
+      summary: 创建沙盒（异步）
+      operationId: createSandbox
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSandboxRequest' }
+      responses:
+        '202':
+          description: 已受理，需轮询任务状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateSandboxResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+    get:
+      summary: 列出沙盒
+      operationId: listSandboxes
+      parameters:
+        - { name: state, in: query, schema: { $ref: '#/components/schemas/SandboxState' } }
+        - { name: requester_type, in: query, schema: { type: string, enum: [human, agent] } }
+        - { name: purpose_tag, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Sandbox' }
+
+  /v1/sandboxes/{sandbox_id}:
+    parameters:
+      - $ref: '#/components/parameters/SandboxId'
+    get:
+      summary: 查询沙盒状态与连接信息
+      operationId: getSandbox
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Sandbox' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 丢弃并回收沙盒
+      description: 按 05/04 文档的级联顺序执行：先删挂载/任务，再删物理副本，最后 drop 临时账号。
+      operationId: discardSandbox
+      responses:
+        '202':
+          description: 回收已触发
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskRef' }
+
+  /v1/sandboxes/{sandbox_id}/checkpoints:
+    parameters:
+      - $ref: '#/components/parameters/SandboxId'
+    post:
+      summary: 创建检查点（复用「标记」能力）
+      operationId: createCheckpoint
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: { type: string, maxLength: 128 }
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Checkpoint' }
+        '409': { $ref: '#/components/responses/Error' }
+    get:
+      summary: 列出检查点
+      operationId: listCheckpoints
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Checkpoint' }
+
+  /v1/sandboxes/{sandbox_id}/rollback:
+    parameters:
+      - $ref: '#/components/parameters/SandboxId'
+    post:
+      summary: 回滚到指定检查点
+      description: 复用「标记时间点回滚」，回滚会级联清理该检查点之后的所有检查点。
+      operationId: rollbackSandbox
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checkpoint_id]
+              properties:
+                checkpoint_id: { type: string }
+      responses:
+        '202':
+          description: 回滚已触发
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskRef' }
+
+  /v1/sandboxes/{sandbox_id}/changeset:
+    parameters:
+      - $ref: '#/components/parameters/SandboxId'
+    get:
+      summary: 获取 ChangeSet
+      description: 结构见 schema/changeset.schema.json。completeness != complete 时不可用于审批。
+      operationId: getChangeSet
+      parameters:
+        - { name: format, in: query, schema: { type: string, enum: [summary, full], default: summary } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './changeset.schema.json'
+        '409':
+          description: 变更集尚未生成完成
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorBody' }
+
+  /v1/sandboxes/{sandbox_id}/merge-requests:
+    parameters:
+      - $ref: '#/components/parameters/SandboxId'
+    post:
+      summary: 提交审批（Agent 可调用）
+      operationId: submitForReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 2000 }
+                reviewers: { type: array, items: { type: string } }
+      responses:
+        '201':
+          description: 审批单已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MergeRequest' }
+        '422':
+          description: changeset_incomplete / high_risk_ddl_requires_human_ack
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorBody' }
+
+  /v1/merge-requests/{merge_request_id}:
+    parameters:
+      - $ref: '#/components/parameters/MergeRequestId'
+    get:
+      summary: 查询审批状态
+      operationId: getMergeRequest
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MergeRequest' }
+
+  /v1/merge-requests/{merge_request_id}/dry-run:
+    parameters:
+      - $ref: '#/components/parameters/MergeRequestId'
+    post:
+      summary: 合并干跑，返回影响面报告
+      description: 不修改生产库，仅产出将要执行的操作序列、影响行数与冲突检测结论。
+      operationId: dryRunMerge
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DryRunReport' }
+
+  /v1/merge-requests/{merge_request_id}/approve:
+    parameters:
+      - $ref: '#/components/parameters/MergeRequestId'
+    post:
+      summary: 审批通过并触发合并（仅人类凭据）
+      operationId: approveMergeRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [comment]
+              properties:
+                comment: { type: string, minLength: 1 }
+                ack_high_risk_ddl:
+                  type: boolean
+                  default: false
+                  description: 变更集含 risk=high 的 DDL 时必须显式置 true
+      responses:
+        '202':
+          description: 合并已触发
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskRef' }
+        '403':
+          description: agent_cannot_approve —— Agent 凭据禁止审批
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorBody' }
+        '409':
+          description: merge_conflict_detected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorBody' }
+
+  /v1/merge-requests/{merge_request_id}/reject:
+    parameters:
+      - $ref: '#/components/parameters/MergeRequestId'
+    post:
+      summary: 审批拒绝（仅人类凭据）
+      operationId: rejectMergeRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [comment]
+              properties:
+                comment: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: 已拒绝
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MergeRequest' }
+
+  /v1/tasks/{task_id}:
+    parameters:
+      - { name: task_id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: 异步任务轮询
+      operationId: getTask
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Task' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        凭据决定 requester_type（human / agent）。服务端只信任凭据，忽略请求体中的任何身份声明，
+        以抵御提示注入伪造身份。
+
+  parameters:
+    SandboxId:
+      name: sandbox_id
+      in: path
+      required: true
+      schema: { type: string }
+    MergeRequestId:
+      name: merge_request_id
+      in: path
+      required: true
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string }
+
+  responses:
+    Error:
+      description: 错误
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+
+  schemas:
+    SandboxState:
+      type: string
+      enum: [creating, ready, checkpointing, rolling_back, diffing, pending_review, merging, merged, discarding, discarded, failed]
+
+    CreateSandboxRequest:
+      type: object
+      required: [source_id, timing_mode, ttl_seconds, purpose_tag]
+      additionalProperties: false
+      properties:
+        source_id: { type: string }
+        timing_mode: { type: string, enum: [near_current, point_in_time] }
+        point_in_time:
+          type: string
+          format: date-time
+          description: timing_mode=point_in_time 时必填
+        ttl_seconds:
+          type: integer
+          minimum: 300
+          maximum: 604800
+          description: 强制必填，无默认值，防止沙盒资源泄漏
+        mount_profile:
+          type: string
+          default: sandbox-small
+          description: 轻量化资源模板，默认不沿用源端生产参数
+        masking_policy:
+          type: string
+          default: default
+          description: 脱敏策略，默认开启；传 none 需要额外授权
+        purpose_tag: { type: string, minLength: 1, maxLength: 64 }
+
+    CreateSandboxResponse:
+      type: object
+      required: [sandbox_id, task_id, state, estimate_basis, poll_after_seconds]
+      properties:
+        sandbox_id: { type: string }
+        task_id: { type: string }
+        state: { $ref: '#/components/schemas/SandboxState' }
+        timing_mode: { type: string, enum: [near_current, point_in_time] }
+        estimate_basis:
+          type: string
+          enum: [snapshot_hit, log_replay]
+          description: snapshot_hit 命中最近快照；log_replay 需回放日志，耗时随跨度增长
+        estimated_ready_at: { type: string, format: date-time }
+        estimate_confidence: { type: string, enum: [high, medium, low] }
+        poll_after_seconds: { type: integer, minimum: 1 }
+
+    Sandbox:
+      type: object
+      properties:
+        sandbox_id: { type: string }
+        state: { $ref: '#/components/schemas/SandboxState' }
+        source_id: { type: string }
+        timing_mode: { type: string, enum: [near_current, point_in_time] }
+        baseline_time: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        requester: { type: string }
+        requester_type: { type: string, enum: [human, agent] }
+        purpose_tag: { type: string }
+        masking_policy: { type: string }
+        connection:
+          type: object
+          description: 临时凭据随沙盒生命周期创建与销毁，不长期存活
+          properties:
+            host: { type: string }
+            port: { type: integer }
+            database: { type: string }
+            username: { type: string }
+            credential_expires_at: { type: string, format: date-time }
+
+    Checkpoint:
+      type: object
+      properties:
+        checkpoint_id: { type: string }
+        label: { type: string }
+        created_at: { type: string, format: date-time }
+        note:
+          type: string
+          description: 回滚到某检查点会级联清理其后的检查点
+
+    MergeRequest:
+      type: object
+      properties:
+        merge_request_id: { type: string }
+        sandbox_id: { type: string }
+        changeset_id: { type: string }
+        state: { type: string, enum: [pending, approved, rejected, merging, merged, failed] }
+        submitted_by: { type: string }
+        submitted_by_type: { type: string, enum: [human, agent] }
+        reason: { type: string }
+        requires_high_risk_ack: { type: boolean }
+        decided_by: { type: string, nullable: true }
+        decided_at: { type: string, format: date-time, nullable: true }
+
+    DryRunReport:
+      type: object
+      properties:
+        merge_request_id: { type: string }
+        statements_planned: { type: integer }
+        rows_affected_estimate: { type: integer }
+        tables:
+          type: array
+          items:
+            type: object
+            properties:
+              table: { type: string }
+              insert: { type: integer }
+              update: { type: integer }
+              delete: { type: integer }
+        conflicts:
+          type: array
+          items: { type: object }
+        rollback_point:
+          type: string
+          description: 合并失败时可回退的生产库时间点（由 RBA 提供）
+        verdict: { type: string, enum: [safe, needs_human_ack, blocked] }
+
+    Task:
+      type: object
+      properties:
+        task_id: { type: string }
+        state: { type: string, enum: [queued, running, succeeded, failed] }
+        progress_percent: { type: integer, minimum: 0, maximum: 100 }
+        estimated_ready_at: { type: string, format: date-time, nullable: true }
+        error: { $ref: '#/components/schemas/ErrorBody' }
+
+    TaskRef:
+      type: object
+      properties:
+        task_id: { type: string }
+        poll_after_seconds: { type: integer }
+
+    ErrorBody:
+      type: object
+      nullable: true
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - ttl_required
+            - point_in_time_required
+            - agent_cannot_approve
+            - masking_bypass_denied
+            - quota_exceeded
+            - sandbox_state_conflict
+            - merge_conflict_detected
+            - changeset_incomplete
+            - high_risk_ddl_requires_human_ack
+            - capacity_unavailable
+            - not_found
+            - internal_error
+        message: { type: string }
+        details: { type: object, nullable: true }
