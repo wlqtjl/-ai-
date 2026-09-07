@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0",
+  "changeset_id": "cs-20260907-0002",
+  "sandbox_id": "sbx-91ce02",
+  "capture": {
+    "path": "logical_log",
+    "db_type": "oracle",
+    "source": "LogMiner on sandbox instance",
+    "start_position": "SCN:8123441",
+    "end_position": "SCN:8123990",
+    "captured_at": "2026-09-07T05:10:00Z"
+  },
+  "baseline": {
+    "timing_mode": "point_in_time",
+    "baseline_time": "2026-09-07T03:00:00Z",
+    "snapshot_id": null
+  },
+  "summary": {
+    "tables_affected": 1,
+    "rows_inserted": 0,
+    "rows_updated": 2,
+    "rows_deleted": 0,
+    "ddl_count": 0,
+    "highest_risk": "medium"
+  },
+  "ddl_changes": [],
+  "table_changes": [
+    {
+      "table": "APP.ORDERS",
+      "primary_key": ["ID"],
+      "counts": { "insert": 0, "update": 2, "delete": 0 },
+      "rows_truncated": true,
+      "rows": [
+        {
+          "op": "update",
+          "pk": { "ID": 2001 },
+          "before": { "ID": 2001, "STATUS": "NEW" },
+          "after": { "ID": 2001, "STATUS": "DONE" },
+          "changed_columns": ["STATUS"],
+          "txn_id": "0a.00c.000391",
+          "position": "SCN:8123500",
+          "occurred_at": "2026-09-07T04:55:12Z"
+        }
+      ]
+    }
+  ],
+  "conflicts": [
+    {
+      "level": "table",
+      "table": "APP.ORDERS",
+      "pk": null,
+      "reason": "production_changed_after_baseline",
+      "production_last_change": "2026-09-07T04:01:00Z",
+      "baseline_time": "2026-09-07T03:00:00Z"
+    }
+  ],
+  "integrity": {
+    "completeness": "truncated",
+    "reason": "rows exceeded per-table cap (10000); full set not materialised",
+    "rows_captured": 1,
+    "bytes_scanned": null,
+    "checksum": null
+  }
+}

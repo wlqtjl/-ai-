@@ -1,0 +1,85 @@
+{
+  "schema_version": "1.0",
+  "changeset_id": "cs-20260907-0001",
+  "sandbox_id": "sbx-7f3a91",
+  "capture": {
+    "path": "logical_log",
+    "db_type": "mysql",
+    "source": "sandbox binlog(ROW, full image)",
+    "start_position": "mysql-bin.000007:41120",
+    "end_position": "mysql-bin.000007:41980",
+    "captured_at": "2026-09-07T03:20:00Z"
+  },
+  "baseline": {
+    "timing_mode": "near_current",
+    "baseline_time": "2026-09-07T03:00:00Z",
+    "snapshot_id": "snap-2026090703"
+  },
+  "summary": {
+    "tables_affected": 1,
+    "rows_inserted": 1,
+    "rows_updated": 1,
+    "rows_deleted": 1,
+    "ddl_count": 1,
+    "highest_risk": "high"
+  },
+  "ddl_changes": [
+    {
+      "ddl_type": "alter_table",
+      "object": "app.orders",
+      "statement": "ALTER TABLE app.orders ADD COLUMN memo VARCHAR(200) NULL",
+      "reversible": false,
+      "risk": "high",
+      "position": "mysql-bin.000007:41230",
+      "occurred_at": "2026-09-07T03:12:40Z"
+    }
+  ],
+  "table_changes": [
+    {
+      "table": "app.orders",
+      "primary_key": ["id"],
+      "counts": { "insert": 1, "update": 1, "delete": 1 },
+      "rows_truncated": false,
+      "rows": [
+        {
+          "op": "insert",
+          "pk": { "id": 1001 },
+          "before": null,
+          "after": { "id": 1001, "status": "pending", "amount": 120.5, "memo": null },
+          "changed_columns": [],
+          "txn_id": "0x1f3a",
+          "position": "mysql-bin.000007:41402",
+          "occurred_at": "2026-09-07T03:12:44Z"
+        },
+        {
+          "op": "update",
+          "pk": { "id": 1002 },
+          "before": { "id": 1002, "status": "pending", "amount": 80.0, "memo": null },
+          "after": { "id": 1002, "status": "shipped", "amount": 88.0, "memo": null },
+          "changed_columns": ["amount", "status"],
+          "txn_id": "0x1f3b",
+          "position": "mysql-bin.000007:41660",
+          "occurred_at": "2026-09-07T03:12:45Z"
+        },
+        {
+          "op": "delete",
+          "pk": { "id": 1003 },
+          "before": { "id": 1003, "status": "cancelled", "amount": 10.0, "memo": null },
+          "after": null,
+          "changed_columns": [],
+          "txn_id": "0x1f3c",
+          "position": "mysql-bin.000007:41902",
+          "occurred_at": "2026-09-07T03:12:46Z"
+        }
+      ]
+    }
+  ],
+  "conflicts": [],
+  "integrity": {
+    "completeness": "complete",
+    "reason": null,
+    "rows_captured": 3,
+    "bytes_scanned": 860,
+    "checksum": "sha256:0a1b2c3d4e5f6071829304a5b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e8f"
+  }
+}

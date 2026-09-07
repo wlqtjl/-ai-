@@ -1,0 +1,85 @@
+{
+  "schema_version": "1.0",
+  "changeset_id": "cs-20260907-0001-b",
+  "sandbox_id": "sbx-7f3a91",
+  "capture": {
+    "path": "block_diff",
+    "db_type": "mysql",
+    "source": "COW snapshot block diff -> innodb page parser",
+    "start_position": null,
+    "end_position": null,
+    "captured_at": "2026-09-07T03:20:05Z"
+  },
+  "baseline": {
+    "timing_mode": "near_current",
+    "baseline_time": "2026-09-07T03:00:00Z",
+    "snapshot_id": "snap-2026090703"
+  },
+  "summary": {
+    "tables_affected": 1,
+    "rows_inserted": 1,
+    "rows_updated": 1,
+    "rows_deleted": 1,
+    "ddl_count": 1,
+    "highest_risk": "high"
+  },
+  "ddl_changes": [
+    {
+      "ddl_type": "alter_table",
+      "object": "app.orders",
+      "statement": "ALTER TABLE app.orders ADD COLUMN memo VARCHAR(200) NULL",
+      "reversible": false,
+      "risk": "high",
+      "position": null,
+      "occurred_at": null
+    }
+  ],
+  "table_changes": [
+    {
+      "table": "app.orders",
+      "primary_key": ["id"],
+      "counts": { "insert": 1, "update": 1, "delete": 1 },
+      "rows_truncated": false,
+      "rows": [
+        {
+          "op": "delete",
+          "pk": { "id": 1003 },
+          "before": { "id": 1003, "status": "cancelled", "amount": 10.0, "memo": null },
+          "after": null,
+          "changed_columns": [],
+          "txn_id": null,
+          "position": null,
+          "occurred_at": null
+        },
+        {
+          "op": "update",
+          "pk": { "id": 1002 },
+          "before": { "id": 1002, "status": "pending", "amount": 80.0, "memo": null },
+          "after": { "id": 1002, "status": "shipped", "amount": 88.0, "memo": null },
+          "changed_columns": ["status", "amount"],
+          "txn_id": null,
+          "position": null,
+          "occurred_at": null
+        },
+        {
+          "op": "insert",
+          "pk": { "id": 1001 },
+          "before": null,
+          "after": { "id": 1001, "status": "pending", "amount": 120.5, "memo": null },
+          "changed_columns": [],
+          "txn_id": null,
+          "position": null,
+          "occurred_at": null
+        }
+      ]
+    }
+  ],
+  "conflicts": [],
+  "integrity": {
+    "completeness": "complete",
+    "reason": null,
+    "rows_captured": 3,
+    "bytes_scanned": 262144,
+    "checksum": "sha256:99aa88bb77cc66dd55ee44ff33001122334455667788990011223344556677ff"
+  }
+}
