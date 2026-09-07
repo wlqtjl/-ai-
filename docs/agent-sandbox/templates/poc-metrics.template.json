@@ -1,5 +1,5 @@
 {
-  "$comment": "POC 实测指标填写模板。指标定义与判定规则见 08-poc-acceptance.md，判定由 tools/poc_gate.py 执行。所有 null 值必须在 POC 结束前填入实测数字，缺失即视为未达标。",
+  "$comment": "POC 实测指标填写模板。指标定义与判定规则见 08-poc-acceptance.md，判定由 tools/poc_gate.py 执行。所有 null 值必须在 POC 结束前填入实测数字，缺失即视为未达标。第二轮修订：删除了『差异一致率=100%』等不可证明的指标。",
   "run_id": "poc-<客户>-<日期>-01",
   "customer": "",
   "db_type": "mysql",
@@ -7,30 +7,42 @@
   "finished_at": null,
   "environment": {
     "sandbox_node_same_datacenter_as_storage": null,
+    "measured_data_path_bandwidth_mbps": null,
+    "clone_is_zero_copy_verified": null,
     "dataset": "medium",
     "concurrency_model": "M2"
   },
   "metrics": {
     "source_side_additions": null,
-    "changeset_consistency_rate": null,
-    "production_impacted_on_failure_count": null,
+    "fixture_mismatch_count": null,
+    "unexpected_production_writes": null,
+    "sla_targets_derived_from_measurement": null,
     "agent_self_approval_count": null,
     "unreclaimed_sandbox_count": null,
+    "masking_enabled_rate": null,
 
     "create_near_current_p95_seconds": null,
     "end_to_end_time_reduction_pct": null,
     "max_concurrent_sandboxes": null,
     "estimate_error_ratio": null,
-    "merge_success_rate": null,
+    "export_success_rate": null,
+    "production_workload_mismatch_upper_bound": null,
     "backup_task_degradation_pct": null,
-    "storage_ratio_vs_full_clone": null,
-    "masking_enabled_rate": null
+    "storage_amplification_per_gb_written": null
+  },
+  "observations": {
+    "$comment": "原始观测量。失配率上界由 poc_gate.py 按 rule of three / Wilson 区间推导，不要手填一个『率』。",
+    "production_workload_mismatches": null,
+    "production_workload_rows_compared": null
   },
   "evidence": {
-    "source_side_additions": "审计日志导出 + 源端权限快照对比",
-    "changeset_consistency_rate": "spike/compare_changesets.py 对 fixture 的比对输出",
-    "production_impacted_on_failure_count": "注入失败演练记录",
-    "agent_self_approval_count": "审批审计记录（requester_type=agent 且 decided_by 为同一主体的条数）"
+    "source_side_additions": "审计日志导出 + 源端权限快照对比（POC 前后各一次）",
+    "fixture_mismatch_count": "spike/compare_changesets.py 对 fixture 全集的比对输出（全量，非抽样）",
+    "unexpected_production_writes": "生产库审计日志中来自沙盒服务账号的写操作条数；首版设计上不应存在任何一条",
+    "sla_targets_derived_from_measurement": "02 文档第 7 节数据通路实测报告 + 目标值推导过程",
+    "agent_self_approval_count": "审批审计记录（requester_type=agent 且 decided_by 为同一主体的条数）",
+    "masking_enabled_rate": "沙盒创建记录中 masking_manifest 非空的比例",
+    "production_workload_mismatch_upper_bound": "双路径交叉校验的观测失配数与比对行数"
   },
   "notes": ""
 }
