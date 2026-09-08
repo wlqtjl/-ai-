@@ -356,7 +356,16 @@ AI 原生 / 云原生数据库赛道（本次修订新增）
  
 十九、落地交付物
 
-本报告的技术方案与方法论建议，已在 [`docs/agent-sandbox/`](docs/agent-sandbox/) 目录下落成可执行、可校验的交付物：
+> ⛔ **重要声明**：`docs/agent-sandbox/` 下全部是**设计草案**，
+> **一牧尚未为「Agent 数据沙箱」写过任何一行代码**。
+> 该目录不代表一牧已具备其中描述的任何能力，**不得**在对外沟通、商务材料或客户演示中
+> 引用其内容作为已有能力的证明。需要对客户介绍时，请用该目录下专门编写的
+> [客户版说明](docs/agent-sandbox/customer-guide.md)（已标注为征求意见稿）。
+>
+> 面向非技术读者的三份文档：[大白话总览](docs/agent-sandbox/overview-plain.md)、
+> [术语对照表](docs/agent-sandbox/GLOSSARY.md)、[客户版说明](docs/agent-sandbox/customer-guide.md)。
+
+本报告的技术方案与方法论建议，已在 [`docs/agent-sandbox/`](docs/agent-sandbox/) 目录下落成可评审、可校验的**设计交付物**：
 
 - 技术设计：ChangeSet 数据模型（含 JSON Schema 与门禁校验器）、A/B 路径对照 spike 方案（含 fixture 与比对脚本）、REST API 与 MCP 工具契约（OpenAPI + MCP schema）、沙盒状态机与生命周期（含不变式校验脚本）、审批工作流与权限模型、Airflow/Celery 队列与配额方案、基准测试套件设计、POC 验收指标与自动化判定脚本；
 - 管理与方法论：第十五部分开放问题的评审确认清单（已增至 9 条）、按 18.3 重做的带依据分级与蒙特卡洛区间的工作量表、18.7 风险台账、18.1 竞品情报台账、18.4 客户访谈提纲。
